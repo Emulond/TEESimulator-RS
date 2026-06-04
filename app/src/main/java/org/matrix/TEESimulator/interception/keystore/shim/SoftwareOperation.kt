@@ -8,7 +8,9 @@ import android.hardware.security.keymint.KeyParameterValue
 import android.hardware.security.keymint.KeyPurpose
 import android.hardware.security.keymint.PaddingMode
 import android.hardware.security.keymint.Tag
+import android.os.Build
 import android.os.ServiceSpecificException
+import android.os.SystemProperties
 import android.system.keystore2.IKeystoreOperation
 import android.system.keystore2.KeyParameters
 import java.security.KeyPair
@@ -20,9 +22,39 @@ import org.matrix.TEESimulator.attestation.KeyMintAttestation
 import org.matrix.TEESimulator.logging.KeyMintParameterLogger
 import org.matrix.TEESimulator.logging.SystemLogger
 
+/**
+ * Mirrors the per-vendor TEE quirk that Duck Detector's OperationErrorPathProbe checks: real
+ * Samsung and Xiaomi-MTK TrustZone return success for updateAad on a non-AEAD operation, while
+ * every other vendor rejects it with a service-specific INVALID_TAG. The module reads the same
+ * device-identity fields the probe reads, so a forged software operation answers exactly as that
+ * vendor's real TEE would.
+ */
+private object VendorQuirks {
+    private val UPDATE_AAD_ALLOWS_SUCCESS = setOf("samsung")
+    private val XIAOMI_BRANDS = setOf("xiaomi", "redmi", "poco")
+
+    fun nonAeadUpdateAadSucceeds(): Boolean {
+        val manufacturer = Build.MANUFACTURER.lowercase()
+        val brand = Build.BRAND.lowercase()
+        if (manufacturer in UPDATE_AAD_ALLOWS_SUCCESS || brand in UPDATE_AAD_ALLOWS_SUCCESS) {
+            return true
+        }
+        if (manufacturer != "xiaomi" && brand !in XIAOMI_BRANDS) return false
+        return isMediaTek()
+    }
+
+    private fun isMediaTek(): Boolean {
+        val roHardware = SystemProperties.get("ro.hardware", "")
+        return roHardware.startsWith("mt") || Build.HARDWARE.startsWith("mt", ignoreCase = true)
+    }
+}
+
 private sealed interface CryptoPrimitive {
     fun updateAad(aadInput: ByteArray?) {
-        throw ServiceSpecificException(KeystoreErrorCodes.invalidTag)
+        // Real Samsung / Xiaomi-MTK TEEs accept updateAad on non-AEAD ops; others reject it.
+        if (!VendorQuirks.nonAeadUpdateAadSucceeds()) {
+            throw ServiceSpecificException(KeystoreErrorCodes.invalidTag)
+        }
     }
 
     fun update(data: ByteArray?): ByteArray?
@@ -158,7 +190,12 @@ private class CipherPrimitive(
         }
 
     override fun updateAad(aadInput: ByteArray?) {
-        if (!isAead) throw ServiceSpecificException(KeystoreErrorCodes.invalidTag)
+        if (!isAead) {
+            if (!VendorQuirks.nonAeadUpdateAadSucceeds()) {
+                throw ServiceSpecificException(KeystoreErrorCodes.invalidTag)
+            }
+            return
+        }
         if (aadInput != null) cipher.updateAAD(aadInput)
     }
 
