@@ -3,6 +3,7 @@ package org.matrix.TEESimulator.pki
 import android.security.keystore.KeyProperties
 import java.io.File
 import java.io.StringReader
+import java.security.cert.X509Certificate
 import java.security.interfaces.ECPrivateKey
 import java.security.interfaces.RSAPrivateKey
 import java.util.concurrent.ConcurrentHashMap
@@ -232,6 +233,15 @@ object KeyBoxManager {
             eventType = parser.next()
         }
         SystemLogger.info("Finished parsing, found ${foundKeys.size} valid keys.")
+        // Surface attestation cert serials so a revoked/leaked keybox is obvious from
+        // logcat alone -- Google's CRL and Duck's "mass abuse" check both match by serial.
+        foundKeys.forEach { (alg, keyBox) ->
+            val serials =
+                keyBox.certificates.joinToString(", ") { cert ->
+                    (cert as? X509Certificate)?.serialNumber?.toString(16) ?: "?"
+                }
+            SystemLogger.info("$alg keybox attestation cert serials (hex): $serials")
+        }
         return foundKeys
     }
 }
