@@ -12,6 +12,7 @@ import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.matrix.TEESimulator.config.BootStateManager
 import org.matrix.TEESimulator.config.ConfigurationManager
 import org.matrix.TEESimulator.interception.keystore.AbstractKeystoreInterceptor
+import org.matrix.TEESimulator.interception.keystore.InterceptorUtils
 import org.matrix.TEESimulator.interception.keystore.Keystore2Interceptor
 import org.matrix.TEESimulator.interception.keystore.KeystoreInterceptor
 import org.matrix.TEESimulator.logging.SystemLogger
@@ -80,6 +81,10 @@ object App {
      */
     private fun purgeDebugDiagnostics() {
         if (SystemLogger.isDebugBuild) return
+        purgeStale(File(InterceptorUtils.DIAGNOSTIC_DIR), InterceptorUtils.DIAGNOSTIC_DIR) { name ->
+            name.startsWith("teesim-") && name.endsWith(".bin")
+        }
+        // Older debug installs wrote the dumps loose in /data/local/tmp; sweep those too.
         purgeStale(File("/data/local/tmp"), "/data/local/tmp") { name ->
             name.startsWith("teesim-") && name.endsWith(".bin")
         }
@@ -88,7 +93,9 @@ object App {
         }
     }
 
-    /** Deletes matching files in [dir], logging a single once-per-boot audit line if any existed. */
+    /**
+     * Deletes matching files in [dir], logging a single once-per-boot audit line if any existed.
+     */
     private fun purgeStale(dir: File, label: String, matches: (String) -> Boolean) {
         val stale = dir.listFiles { _, name -> matches(name) } ?: return
         if (stale.isEmpty()) return

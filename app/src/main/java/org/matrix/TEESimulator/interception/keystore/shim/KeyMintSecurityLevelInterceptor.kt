@@ -531,8 +531,8 @@ class KeyMintSecurityLevelInterceptor(
             val req = data.marshall()
             data.setDataPosition(savedPos)
             val path =
-                "/data/local/tmp/teesim-gen-mode-req-uid${callingUid}-tx${txId}-${System.nanoTime()}.bin"
-            runCatching { java.io.File(path).writeBytes(req) }
+                "${InterceptorUtils.DIAGNOSTIC_DIR}/teesim-gen-mode-req-uid${callingUid}-tx${txId}-${System.nanoTime()}.bin"
+            runCatching { java.io.File(path).apply { parentFile?.mkdirs() }.writeBytes(req) }
             SystemLogger.debug(
                 "[gen-mode-req] uid=$callingUid txId=$txId len=${req.size} path=$path"
             )

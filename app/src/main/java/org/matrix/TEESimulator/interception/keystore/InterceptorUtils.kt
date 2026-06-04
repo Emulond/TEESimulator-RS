@@ -17,6 +17,13 @@ data class KeyIdentifier(val uid: Int, val alias: String)
 /** A collection of utility functions to support binder interception. */
 object InterceptorUtils {
 
+    /**
+     * Dedicated subfolder for the debug-only diagnostic `.bin` dumps. Keeping them out of the
+     * world-readable `/data/local/tmp` root means they no longer litter a directory shared with
+     * every other tool, and the release purge can sweep the whole folder in one shot.
+     */
+    const val DIAGNOSTIC_DIR = "/data/local/tmp/teesim"
+
     private const val EX_SERVICE_SPECIFIC = -8
 
     private fun synthesizeSseMessage(errorCode: Int): String =
@@ -128,8 +135,8 @@ object InterceptorUtils {
             val savedPos = parcel.dataPosition()
             val wire = parcel.marshall()
             parcel.setDataPosition(savedPos)
-            val path = "/data/local/tmp/teesim-$diagnosticTag.bin"
-            runCatching { java.io.File(path).writeBytes(wire) }
+            val path = "$DIAGNOSTIC_DIR/teesim-$diagnosticTag.bin"
+            runCatching { java.io.File(path).apply { parentFile?.mkdirs() }.writeBytes(wire) }
             SystemLogger.debug("[$diagnosticTag] reply len=${wire.size} path=$path")
         }
         return BinderInterceptor.TransactionResult.OverrideReply(parcel)
