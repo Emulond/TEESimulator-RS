@@ -191,12 +191,21 @@ object CertificateGenerator {
         // certificate"). Mirrors the patch path's fail-safe
         // (AttestationPatcher.getKeyboxForUidAndAlgorithm) and the RSA-leaf-under-EC-keybox handling
         // in commit e6d5e4d.
-        return KeyBoxManager.getAttestationKey(keyboxFile, algorithmName)
-            ?: KeyBoxManager.getAnyAttestationKey(keyboxFile)
-            ?: throw android.os.ServiceSpecificException(
-                -75, // ATTESTATION_KEYS_NOT_PROVISIONED
-                "No usable attestation key in $keyboxFile",
-            )
+        val matched = KeyBoxManager.getAttestationKey(keyboxFile, algorithmName)
+        val keybox =
+            matched
+                ?: KeyBoxManager.getAnyAttestationKey(keyboxFile)
+                ?: throw android.os.ServiceSpecificException(
+                    -75, // ATTESTATION_KEYS_NOT_PROVISIONED
+                    "No usable attestation key in $keyboxFile",
+                )
+        // Surface which keybox actually signs the forge, so an EC-only-keybox fallback (an RSA leaf
+        // rooted under the EC key) is visible on the per-UID plane instead of silent.
+        SystemLogger.uidLog(uid, null, "keybox-pick") {
+            "req=$algorithmName ${if (matched != null) "matched" else "fellback-to-any"} " +
+                "signer=${getIssuerFromKeybox(keybox)}"
+        }
+        return keybox
     }
 
     /** Retrieves the key pair and issuer name for a given attestation key alias. */

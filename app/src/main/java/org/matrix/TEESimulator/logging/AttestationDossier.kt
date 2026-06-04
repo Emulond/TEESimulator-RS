@@ -1,5 +1,7 @@
 package org.matrix.TEESimulator.logging
 
+import android.hardware.security.keymint.Tag
+import android.system.keystore2.Authorization
 import java.security.cert.Certificate
 import java.security.cert.X509Certificate
 import org.matrix.TEESimulator.attestation.AttestationPatcher
@@ -30,4 +32,42 @@ object AttestationDossier {
         SystemLogger.uidLog(uid, txId, "chain", AttestationPatcher.formatCertChain(chain))
         SystemLogger.uidLog(uid, txId, "props", AndroidDeviceUtils.describeSources(uid))
     }
+
+    /**
+     * Records the *shape* of the emitted authorization list — count, ordered tags, and per-auth
+     * securityLevel. This is the exact surface the duck detector's generate-mode parcel fingerprint
+     * stride-walks, so logging it readably lets a "fingerprint" detection be compared against the
+     * known genuine-TEE shape without decoding the marshalled reply offline.
+     */
+    fun logAuthShape(uid: Int, txId: Long, authorizations: Array<Authorization>?) {
+        if (!SystemLogger.isUidLogged(uid)) return
+        val auths = authorizations ?: return
+        val shape = auths.joinToString(",") { "${tagName(it.keyParameter.tag)}/${it.securityLevel}" }
+        SystemLogger.uidLog(uid, txId, "auth-shape", "n=${auths.size} [$shape]")
+    }
+
+    /** Names the authorization tags that occur in generate-mode replies; others render as numbers. */
+    private fun tagName(tag: Int): String =
+        when (tag) {
+            Tag.PURPOSE -> "PURPOSE"
+            Tag.ALGORITHM -> "ALGORITHM"
+            Tag.KEY_SIZE -> "KEY_SIZE"
+            Tag.DIGEST -> "DIGEST"
+            Tag.PADDING -> "PADDING"
+            Tag.EC_CURVE -> "EC_CURVE"
+            Tag.RSA_PUBLIC_EXPONENT -> "RSA_PUBLIC_EXPONENT"
+            Tag.NO_AUTH_REQUIRED -> "NO_AUTH_REQUIRED"
+            Tag.ORIGIN -> "ORIGIN"
+            Tag.OS_VERSION -> "OS_VERSION"
+            Tag.OS_PATCHLEVEL -> "OS_PATCHLEVEL"
+            Tag.VENDOR_PATCHLEVEL -> "VENDOR_PATCHLEVEL"
+            Tag.BOOT_PATCHLEVEL -> "BOOT_PATCHLEVEL"
+            Tag.CREATION_DATETIME -> "CREATION_DATETIME"
+            Tag.ROOT_OF_TRUST -> "ROOT_OF_TRUST"
+            Tag.USER_ID -> "USER_ID"
+            Tag.USAGE_COUNT_LIMIT -> "USAGE_COUNT_LIMIT"
+            Tag.UNLOCKED_DEVICE_REQUIRED -> "UNLOCKED_DEVICE_REQUIRED"
+            Tag.ACTIVE_DATETIME -> "ACTIVE_DATETIME"
+            else -> "tag${tag and 0x0FFFFFFF}"
+        }
 }

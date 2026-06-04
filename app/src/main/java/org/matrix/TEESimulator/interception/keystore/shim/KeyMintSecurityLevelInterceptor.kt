@@ -746,8 +746,12 @@ class KeyMintSecurityLevelInterceptor(
                     }
                 }
             }
-            .getOrElse {
-                SystemLogger.error("Error during generateKey handling for UID $callingUid.", it)
+            .getOrElse { ex ->
+                SystemLogger.error("Error during generateKey handling for UID $callingUid.", ex)
+                // The dossier only fires on a produced chain; a forge that throws (e.g. a missing
+                // keybox) would otherwise leave no per-UID record. Pair this with the preceding
+                // `dispatch` line to see which request failed and why.
+                SystemLogger.uidLog(callingUid, txId, "forge-fail") { "ex=${ex.message}" }
                 InterceptorUtils.createServiceSpecificErrorReply(SECURE_HW_COMMUNICATION_FAILED)
             }
     }
@@ -914,6 +918,7 @@ class KeyMintSecurityLevelInterceptor(
 
         val response =
             buildKeyEntryResponse(callingUid, keyData.second, parsedParams, keyDescriptor)
+        AttestationDossier.logAuthShape(callingUid, txId, response.metadata?.authorizations)
         generatedKeys[keyId] =
             GeneratedKeyInfo(keyData.first, null, keyDescriptor.nspace, response, parsedParams)
         Keystore2Interceptor.forgetDeletedKey(keyId)
