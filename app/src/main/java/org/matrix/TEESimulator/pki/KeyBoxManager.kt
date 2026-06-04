@@ -54,10 +54,21 @@ object KeyBoxManager {
         // If it's not in the cache, the `getOrPut` block is executed to parse and store it.
         val keyMap =
             keyStoreCache.getOrPut(keyStoreFileName) { parseKeyStoreFile(keyStoreFileName) }
-        SystemLogger.verbose(
-            "Fetching attestation key in $keyStoreFileName with $algorithm algorithm."
-        )
-        return keyMap[algorithm]
+        val keyBox = keyMap[algorithm]
+        if (keyBox != null) {
+            // Surface attestation cert serials on every fetch so a revoked/leaked keybox is
+            // obvious from logcat alone -- Google's CRL and Duck's "mass abuse" check both match
+            // by certificate serial (lowercase hex). Logged here rather than at parse time because
+            // the parse is cached and would emit at most once per boot.
+            val serials =
+                keyBox.certificates.joinToString(", ") { cert ->
+                    (cert as? X509Certificate)?.serialNumber?.toString(16) ?: "?"
+                }
+            SystemLogger.info(
+                "Using $algorithm keybox $keyStoreFileName; attestation cert serials (hex): $serials"
+            )
+        }
+        return keyBox
     }
 
     /**
@@ -233,15 +244,6 @@ object KeyBoxManager {
             eventType = parser.next()
         }
         SystemLogger.info("Finished parsing, found ${foundKeys.size} valid keys.")
-        // Surface attestation cert serials so a revoked/leaked keybox is obvious from
-        // logcat alone -- Google's CRL and Duck's "mass abuse" check both match by serial.
-        foundKeys.forEach { (alg, keyBox) ->
-            val serials =
-                keyBox.certificates.joinToString(", ") { cert ->
-                    (cert as? X509Certificate)?.serialNumber?.toString(16) ?: "?"
-                }
-            SystemLogger.info("$alg keybox attestation cert serials (hex): $serials")
-        }
         return foundKeys
     }
 }
