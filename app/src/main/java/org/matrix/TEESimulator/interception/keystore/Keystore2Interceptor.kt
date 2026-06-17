@@ -254,7 +254,9 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
                 return InterceptorUtils.createTypedObjectReply(response)
             }
 
-            if (ConfigurationManager.shouldSkipUid(callingUid))
+            // generateKey force-forges attest/device-id keys even for skipped UIDs; getKeyEntry
+            // must serve them back or the framework's attestKeyAlias lookup gets KEY_NOT_FOUND.
+            if (code != GET_KEY_ENTRY_TRANSACTION && ConfigurationManager.shouldSkipUid(callingUid))
                 return TransactionResult.ContinueAndSkipPost
 
             if (code == DELETE_KEY_TRANSACTION) {
@@ -341,7 +343,11 @@ object Keystore2Interceptor : AbstractKeystoreInterceptor() {
                     )
                     return InterceptorUtils.createErrorReply(RESPONSE_KEY_NOT_FOUND)
                 }
-                return TransactionResult.Continue
+                // Owned keys were served above; for a skipped UID a non-owned key must still skip
+                // post-processing so we never patch an un-targeted app's real key.
+                return if (ConfigurationManager.shouldSkipUid(callingUid))
+                    TransactionResult.ContinueAndSkipPost
+                else TransactionResult.Continue
             }
 
             if (KeyMintSecurityLevelInterceptor.isAttestationKey(keyId))
