@@ -16,6 +16,7 @@ import org.bouncycastle.asn1.ASN1TaggedObject
 import org.bouncycastle.asn1.x509.Extension
 import org.bouncycastle.cert.X509CertificateHolder
 import org.matrix.TEESimulator.logging.SystemLogger
+import org.matrix.TEESimulator.util.AndroidDeviceUtils
 import org.matrix.TEESimulator.util.toHex
 
 /**
@@ -157,12 +158,15 @@ object DeviceAttestationService {
             }
             val fields = keyDescriptionSeq.toArray()
 
-            val attestVersion =
+            val deviceAttestVersion =
                 ASN1Integer.getInstance(
                         fields[AttestationConstants.KEY_DESCRIPTION_ATTESTATION_VERSION_INDEX]
                     )
                     .positiveValue
                     .toInt()
+            // The device KeyMint HAL can report a version below its OS's AOSP value (100 on an A16
+            // where BAKLAVA mandates 400); cache the AOSP value so the forge matches an updated device.
+            val attestVersion = AndroidDeviceUtils.aospAttestVersion ?: deviceAttestVersion
             val keymasterVersion =
                 ASN1Integer.getInstance(
                         fields[AttestationConstants.KEY_DESCRIPTION_KEYMINT_VERSION_INDEX]
@@ -256,7 +260,7 @@ object DeviceAttestationService {
             }
 
             SystemLogger.info(
-                "Successfully extracted attestation data: version=$attestVersion, osVersion=$osVersion, osPatch=$osPatchLevel, vendorPatch=$vendorPatchLevel, bootPatch=$bootPatchLevel, moduleHash=${moduleHash?.toHex()}, bootKey=${verifiedBootKey?.toHex()}, bootHash=${verifiedBootHash?.toHex()}"
+                "Successfully extracted attestation data: version=$deviceAttestVersion, osVersion=$osVersion, osPatch=$osPatchLevel, vendorPatch=$vendorPatchLevel, bootPatch=$bootPatchLevel, moduleHash=${moduleHash?.toHex()}, bootKey=${verifiedBootKey?.toHex()}, bootHash=${verifiedBootHash?.toHex()}"
             )
             return AttestationData(
                 moduleHash,

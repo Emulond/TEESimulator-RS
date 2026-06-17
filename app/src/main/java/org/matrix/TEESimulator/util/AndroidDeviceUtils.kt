@@ -428,6 +428,10 @@ object AndroidDeviceUtils {
             Build.VERSION_CODES.BAKLAVA to 400, // KeyMint 4.0
         )
 
+    /** AOSP-mandated attestation version for the running OS, or null when the SDK is unmapped. */
+    internal val aospAttestVersion: Int?
+        get() = attestVersionMap[Build.VERSION.SDK_INT]
+
     /**
      * Retrieves the attestation version for the given security level. The value follows the device
      * OS: cached attestation data wins, then attestVersionMap[SDK_INT], then 400 as last resort. A
