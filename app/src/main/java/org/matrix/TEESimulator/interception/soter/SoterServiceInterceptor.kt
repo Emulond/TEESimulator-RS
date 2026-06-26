@@ -168,7 +168,7 @@ object SoterServiceInterceptor : BinderInterceptor() {
                 forgedReply(callingUid, txId, method) {
                     writeInt(1)
                     writeLong(1L) // session — any non-zero satisfies the probe
-                    writeInt(SOTER_OK) // resultCode
+                    writeInt(SOTER_OK) // resultCode — probe requires == 0 (SoterCapabilityProbe.kt:107)
                 }
             TX_FINISH_SIGN ->
                 forgedReply(callingUid, txId, method) {
