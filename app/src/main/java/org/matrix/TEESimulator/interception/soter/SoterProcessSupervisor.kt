@@ -45,8 +45,12 @@ object SoterProcessSupervisor {
         "exec ./inject `pidof $SOTER_PACKAGE` libTEESimulator.so entry"
 
     private const val REBIND_DELAY_MS = 1000L
+    private const val REBIND_MAX_MS = 30_000L
 
     private val started = AtomicBoolean(false)
+
+    /** Re-bind backoff; doubles each failed (re)bind up to [REBIND_MAX_MS], resets on a clean mount. Handler-thread-confined. */
+    private var rebindDelay = REBIND_DELAY_MS
 
     private lateinit var context: Context
     private lateinit var handler: Handler
@@ -74,12 +78,17 @@ object SoterProcessSupervisor {
 
             override fun onServiceDisconnected(name: ComponentName?) {
                 SystemLogger.debug("SOTER service disconnected (process died); rebinding")
-                rebind()
+                scheduleRetry()
             }
 
             override fun onBindingDied(name: ComponentName?) {
                 SystemLogger.debug("SOTER binding died; rebinding")
-                rebind()
+                scheduleRetry()
+            }
+
+            override fun onNullBinding(name: ComponentName?) {
+                SystemLogger.debug("SOTER onBind returned null; rebinding")
+                scheduleRetry()
             }
         }
 
@@ -97,13 +106,24 @@ object SoterProcessSupervisor {
             SystemLogger.debug("SOTER bind requested (on-demand poke)")
         } else {
             SystemLogger.debug("SOTER bindService returned false; retrying")
-            handler.postDelayed({ rebind() }, REBIND_DELAY_MS)
+            scheduleRetry()
         }
     }
 
     private fun rebind() {
         runCatching { context.unbindService(connection) }
-        handler.postDelayed({ bind() }, REBIND_DELAY_MS)
+        bind()
+    }
+
+    /**
+     * Re-attempts the bind after the current backoff, then widens it (capped at [REBIND_MAX_MS]).
+     * Every path that fails to leave the forge mounted routes here, so a live-but-uninjected
+     * binding is re-attempted instead of stranding the forge. A clean [mount] resets the backoff.
+     */
+    private fun scheduleRetry() {
+        val delay = rebindDelay
+        rebindDelay = (rebindDelay * 2).coerceAtMost(REBIND_MAX_MS)
+        handler.postDelayed({ rebind() }, delay)
     }
 
     /** Confirms injection via the `0xdeadbeef` handshake, injecting first if absent, then registers. */
@@ -112,21 +132,30 @@ object SoterProcessSupervisor {
         if (backdoor == null) {
             SystemLogger.debug("SOTER backdoor absent; injecting libTEESimulator.so")
             if (!injectLibrary()) {
-                SystemLogger.debug("SOTER injection failed; will retry on next (re)bind")
+                SystemLogger.debug("SOTER injection failed; scheduling re-bind")
+                scheduleRetry()
                 return
             }
             backdoor = BinderInterceptor.getBackdoor(soterBinder)
         }
         if (backdoor == null) {
-            SystemLogger.debug("SOTER backdoor handshake failed after injection")
+            SystemLogger.debug("SOTER backdoor handshake failed after injection; scheduling re-bind")
+            scheduleRetry()
             return
         }
-        BinderInterceptor.register(
-            backdoor,
-            soterBinder,
-            SoterServiceInterceptor,
-            SoterServiceInterceptor.interceptedCodes,
-        )
+        val registered =
+            BinderInterceptor.register(
+                backdoor,
+                soterBinder,
+                SoterServiceInterceptor,
+                SoterServiceInterceptor.interceptedCodes,
+            )
+        if (!registered) {
+            SystemLogger.debug("SOTER register failed; scheduling re-bind")
+            scheduleRetry()
+            return
+        }
+        rebindDelay = REBIND_DELAY_MS
         SystemLogger.debug("SOTER forge mounted; handshake ok")
     }
 
