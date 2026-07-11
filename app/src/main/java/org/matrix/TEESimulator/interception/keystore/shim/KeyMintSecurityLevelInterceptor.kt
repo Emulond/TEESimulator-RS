@@ -892,7 +892,16 @@ class KeyMintSecurityLevelInterceptor(
         // signed by the attest key the caller chains to via getCertChain, never silently re-rooted
         // under the keybox (which double-roots the assembled chain and fails verification).
         val attestKeyAlias: String? =
-            attestationKey?.let { it.alias ?: findGeneratedAliasByKeyId(callingUid, it.nspace) }
+            attestationKey?.let {
+                if (it.domain == Domain.GRANT)
+                    resolveGrant(it.nspace, callingUid)?.ownerKeyId?.alias
+                else it.alias ?: findGeneratedAliasByKeyId(callingUid, it.nspace)
+            }
+        if (attestationKey != null && attestationKey.domain == Domain.GRANT) {
+            SystemLogger.uidLog(callingUid, txId, "attest-grant") {
+                "grantId=${attestationKey.nspace} → signer=$attestKeyAlias"
+            }
+        }
         if (attestationKey != null && attestKeyAlias == null) {
             throw android.os.ServiceSpecificException(
                 KEYMINT_INVALID_ARGUMENT,
