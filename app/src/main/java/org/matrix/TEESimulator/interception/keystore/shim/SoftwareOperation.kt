@@ -501,6 +501,22 @@ internal object KeystoreErrorCodes {
         resolveField("android.hardware.security.keymint.ErrorCode", "UNKNOWN_ERROR", -1000)
     }
 
+    val incompatibleBlockMode: Int by lazy {
+        resolveField("android.hardware.security.keymint.ErrorCode", "INCOMPATIBLE_BLOCK_MODE", -8)
+    }
+
+    val incompatiblePaddingMode: Int by lazy {
+        resolveField("android.hardware.security.keymint.ErrorCode", "INCOMPATIBLE_PADDING_MODE", -11)
+    }
+
+    val incompatibleDigest: Int by lazy {
+        resolveField("android.hardware.security.keymint.ErrorCode", "INCOMPATIBLE_DIGEST", -13)
+    }
+
+    val invalidMacLength: Int by lazy {
+        resolveField("android.hardware.security.keymint.ErrorCode", "INVALID_MAC_LENGTH", -57)
+    }
+
     fun resolveField(className: String, fieldName: String, fallback: Int): Int =
         runCatching { Class.forName(className).getField(fieldName).getInt(null) }
             .getOrElse {
