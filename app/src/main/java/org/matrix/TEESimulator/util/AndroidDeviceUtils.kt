@@ -470,6 +470,9 @@ object AndroidDeviceUtils {
                 else -> "default"
             }
         SystemLogger.debug("attestVersion=$version source=$source securityLevel=$securityLevel")
+        SystemLogger.debug(
+            "vintf-version attest=$version keymaster=$version source=$source securityLevel=$securityLevel"
+        )
         return version
     }
 
