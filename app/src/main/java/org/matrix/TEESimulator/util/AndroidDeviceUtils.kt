@@ -777,6 +777,10 @@ object AndroidDeviceUtils {
 
     val moduleHash: ByteArray by lazy {
         DeviceAttestationService.CachedAttestationData?.moduleHash
+            ?.also { SystemLogger.debug { "module-hash source=cache hash=${it.toHex().take(8)}" } }
+            ?: supplementaryModuleHash()?.also {
+                SystemLogger.debug { "module-hash source=framework-api hash=${it.toHex().take(8)}" }
+            }
             ?: runCatching {
                     data class ModuleEntry(val nameEncoded: ByteArray, val fullEncoded: ByteArray)
 
@@ -811,11 +815,37 @@ object AndroidDeviceUtils {
 
                     MessageDigest.getInstance("SHA-256").digest(finalDerSet)
                 }
+                .onSuccess {
+                    SystemLogger.debug { "module-hash source=rederive hash=${it.toHex().take(8)}" }
+                }
+                .onFailure { SystemLogger.debug { "module-hash source=zero hash=00000000" } }
                 .getOrElse {
                     SystemLogger.error("Failed to compute module hash.", it)
                     ByteArray(32)
                 }
     }
+
+    /**
+     * Reads the module-hash DER pre-image straight from the framework's own KeyStoreManager and
+     * SHA-256's it, so the value byte-matches what a verifier derives from the same
+     * getSupplementaryAttestationInfo call. Returns null on any failure (e.g. the API is
+     * unreachable from this process) so the caller falls back to local re-derivation.
+     */
+    private fun supplementaryModuleHash(): ByteArray? =
+        runCatching {
+                // @SystemApi surface added in Android 16, absent from the compile SDK, so reflect.
+                val managerClass = Class.forName("android.security.keystore.KeyStoreManager")
+                val manager = managerClass.getMethod("getInstance").invoke(null)
+                // MODULE_HASH is the KeyMint tag (TagType.BYTES | 724 = 0x900002D4), read from the
+                // framework so it matches the verifier's argument exactly.
+                val moduleHashTag = managerClass.getField("MODULE_HASH").getInt(null)
+                val derPreImage =
+                    managerClass
+                        .getMethod("getSupplementaryAttestationInfo", Int::class.java)
+                        .invoke(manager, moduleHashTag) as ByteArray
+                MessageDigest.getInstance("SHA-256").digest(derPreImage)
+            }
+            .getOrNull()
 
     private fun compareByteArrays(a: ByteArray, b: ByteArray): Int {
         val length = minOf(a.size, b.size)
